@@ -110,9 +110,20 @@ let player = {
     vitorias: 0,
     itensObtidos: [],
     dados: [
-        {nome: "Ataque", tipo: "atk", faces: 6},
-        {nome: "Defesa", tipo: "def", faces: 6}
-    ],
+    {
+        nome: "Ataque",
+        tipo: "atk",
+        faces: 6,
+        critChance: 10,
+        critMulti: 2
+    },
+    {
+        nome: "Defesa",
+        tipo: "def",
+        faces: 6,
+        bloqueioBonus: 0
+    }
+],
     inventario: []
 };
 
@@ -126,11 +137,28 @@ let salvarSlot = "1";
 
 // HUD
 function atualizarHUD() {
+    let dadosTexto = player.dados.map((d, i) => {
+        let info = `🎲 ${d.nome} (${d.tipo}) d${d.faces}`;
+
+        if (d.critChance) {
+            info += ` | Crit: ${d.critChance}% x${d.critMulti}`;
+        }
+
+        if (d.bloqueioBonus) {
+            info += ` | Block +${d.bloqueioBonus}`;
+        }
+
+        return info;
+    }).join("\n");
+
     document.getElementById("player").innerText =
         "👤 " + player.classe +
         "\n❤️ HP: " + player.hp +
         "\n🔮 Mana: " + player.mana +
-        "\n💰 Ouro: " + player.gold;
+        "\n💰 Ouro: " + player.gold +
+        "\n\n" +
+        "📊 DADOS:\n" +
+        dadosTexto;
 
     document.getElementById("inventory").innerText =
         "🎒 " + (player.inventario.length ? player.inventario.join(", ") : "Vazio");
@@ -377,11 +405,37 @@ function bau() {
     eventoAtual = {
         opcoes: {
             "1": () => {
-                let ouro = rand([5,15]);
+
+                // 🎲 CHANCE DE MÍMICO
+                let chanceMimico = Math.random();
+
+                if (chanceMimico < 0.25) { 
+                    // 25% de chance de ser mimico
+                    print("💀 O baú era um MÍMICO!", "box combate");
+
+                    modo = "combate";
+                    enemy = {
+                        nome: "Mímico",
+                        hp: 25,
+                        atk: [4, 8],
+                        gold: [10, 20]
+                    };
+
+                    definirIntento();
+                    print("⚔️ Início de combate!", "combate");
+                    print("Digite: rolar", "combate");
+
+                    return;
+                }
+
+                // 🎁 BAÚ NORMAL
+                let ouro = rand([5, 15]);
                 player.gold += ouro;
-                print("Você encontrou " + ouro + " ouro!");
+                print("🪙 Você encontrou " + ouro + " ouro!");
+
                 modo = "explorando";
             },
+
             "2": () => {
                 print("Você ignorou o baú.");
                 modo = "explorando";
@@ -389,7 +443,7 @@ function bau() {
         }
     };
 
-    print("Você encontrou um baú:", "box evento");
+    print("📦 Você encontrou um baú:", "box evento");
     print("1 - Abrir", "evento");
     print("2 - Ignorar", "evento");
 }
