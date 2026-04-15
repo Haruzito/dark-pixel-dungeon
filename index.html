@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Dark Pixel Dungeon</title>
+
+<style>
+body {
+    background: black;
+    color: lime;
+    font-family: monospace;
+    margin: 0;
+}
+
+#layout {
+    display: flex;
+    height: 100vh;
+}
+
+#left, #right {
+    width: 20%;
+    padding: 10px;
+    border-right: 1px solid lime;
+}
+
+#right {
+    border-left: 1px solid lime;
+    border-right: none;
+}
+
+#center {
+    width: 60%;
+    display: flex;
+    flex-direction: column;
+}
+
+#terminal {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    white-space: pre-line;
+}
+
+input {
+    padding: 10px;
+    background: black;
+    color: lime;
+    border: none;
+    outline: none;
+}
+
+#player, #enemy, #inventory {
+    margin-bottom: 15px;
+    padding: 10px;
+    border: 1px solid lime;
+}
+
+.box {
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid lime;
+}
+
+.evento {
+    background: darkgreen;
+    color: yellow;
+}
+
+.combate {
+    background: darkred;
+    color: yellow;
+}
+
+.linha {
+    margin: 5px 0;
+}
+</style>
+</head>
+
+<body>
+
+<div id="layout">
+    <div id="left">
+        <div id="player"></div>
+        <div id="enemy"></div>
+    </div>
+
+    <div id="center">
+        <div id="terminal"></div>
+        <input id="input" placeholder="Digite um comando..." autofocus>
+    </div>
+
+    <div id="right">
+        <div id="inventory"></div>
+    </div>
+</div>
+
+<script>
+let term = document.getElementById("terminal");
+let input = document.getElementById("input");
+
+let player = {
+    nome: "",
+    classe: "Aventureiro",
+    nivel: 1,
+    xp: 0,
+    hp: 30,
+    mana: 10,
+    gold: 0,
+    vitorias: 0,
+    itensObtidos: [],
+    dados: [
+        {nome: "Ataque", tipo: "atk", faces: 6},
+        {nome: "Defesa", tipo: "def", faces: 6}
+    ],
+    inventario: []
+};
+
+let enemy = null;
+let enemyIntent = null;
+let modo = "explorando";
+let resultados = [];
+let eventoAtual = null;
+let inicioJogo = Date.now();
+let salvarSlot = "1";
+
+// HUD
+function atualizarHUD() {
+    document.getElementById("player").innerText =
+        "👤 " + player.classe +
+        "\n❤️ HP: " + player.hp +
+        "\n🔮 Mana: " + player.mana +
+        "\n💰 Ouro: " + player.gold;
+
+    document.getElementById("inventory").innerText =
+        "🎒 " + (player.inventario.length ? player.inventario.join(", ") : "Vazio");
+
+    if (modo === "combate" && enemy) {
+        document.getElementById("enemy").innerText =
+            "👾 " + enemy.nome + "\nHP: " + enemy.hp;
+    } else {
+        document.getElementById("enemy").innerText = "";
+    }
+}
+
+// TERMINAL
+function print(txt, classe="") {
+    let div = document.createElement("div");
+    div.className = classe + " linha";
+    div.innerText = txt;
+
+    term.appendChild(div);
+    term.scrollTop = term.scrollHeight;
+
+    atualizarHUD();
+}
+
+// INPUT
+input.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+        let cmd = input.value.toLowerCase();
+        print("> " + cmd);
+
+        // BLOQUEIO GAME OVER
+        if (modo === "gameover") {
+            if (cmd === "menu") location.reload();
+            input.value = "";
+            return;
+        }
+
+        if (modo === "menu") {
+            if (player.nome === "") {
+                player.nome = cmd;
+                print("Escolha um slot: 1, 2 ou 3", "evento");
+            } else {
+                salvarSlot = cmd;
+                print("Digite 'iniciar' para começar", "evento");
+                modo = "menu_pronto";
+            }
+            input.value = "";
+            return;
+        }
+
+        if (modo === "menu_pronto") {
+    if (cmd === "iniciar") {
+        print("Bem-vindo, " + player.nome + "!");
+        print("Digite 'explorar' para começar sua aventura...", "evento");
+        modo = "explorando";
+    }
+    input.value = "";
+    return;
+}
+
+        interpretar(cmd);
+        input.value = "";
+    }
+});
+
+// GAME OVER CORRIGIDO
+function gameOver() {
+    modo = "gameover";
+
+    let tempo = Math.floor((Date.now() - inicioJogo) / 1000);
+
+    print("☠️ GAME OVER", "box combate");
+    print("Tempo: " + tempo + "s", "combate");
+    print("Nível: " + player.nivel, "combate");
+    print("Vitórias: " + player.vitorias, "combate");
+    print("Itens: " + (player.itensObtidos.join(", ") || "Nenhum"), "combate");
+    print("Digite 'menu' para voltar", "evento");
+}
+
+// INTERPRETADOR
+function interpretar(cmd) {
+
+    if (modo === "explorando") {
+        if (cmd === "explorar") proximaSala();
+        else if (cmd === "salvar") salvarJogo();
+        else if (cmd === "status") print("HP: " + player.hp);
+        else print("Comandos: explorar, status");
+    }
+
+    else if (modo === "evento") {
+        if (!eventoAtual) return;
+        let opcao = eventoAtual.opcoes[cmd];
+        if (opcao) opcao();
+        else print("Escolha válida: " + Object.keys(eventoAtual.opcoes).join(", "));
+    }
+
+    else if (modo === "combate") {
+        if (cmd === "rolar") rolarDados();
+        else if (cmd.startsWith("usar")) usarDados(cmd);
+        else print("Comandos: rolar, usar 0 1");
+    }
+
+    atualizarHUD();
+}
+
+// SALAS
+function proximaSala() {
+    let roll = Math.random();
+    if (roll < 0.4) iniciarCombate();
+    else if (roll < 0.6) eventoDescanso();
+    else if (roll < 0.8) eventoLoja();
+    else eventoAleatorio();
+}
+
+// INIMIGOS
+function gerarInimigo() {
+    let inimigos = [
+        {nome: "Goblin", hp: 15, atk: [2,6], gold: [5,10]},
+        {nome: "Esqueleto", hp: 20, atk: [3,7], gold: [8,15]},
+        {nome: "Slime Sombrio", hp: 10, atk: [2,6], gold: [4,7]},
+        {nome: "Slime", hp: 6, atk: [2,6], gold: [2,4]},
+        {nome: "Esqueleto Pirata", hp: 15, atk: [6,10], gold: [10,15]}
+    ];
+    return inimigos[Math.floor(Math.random() * inimigos.length)];
+}
+
+// COMBATE
+function iniciarCombate() {
+    modo = "combate";
+    enemy = gerarInimigo();
+    definirIntento();
+
+    print("⚔️ Você encontrou: " + enemy.nome, "box combate");
+    print("Digite: rolar", "combate");
+}
+
+function rolarDados() {
+    resultados = [];
+
+    player.dados.forEach((d, i) => {
+        let val = Math.floor(Math.random() * d.faces) + 1;
+        resultados.push({d, val});
+        print("[" + i + "] " + d.nome + " → " + val, "combate");
+    });
+
+    print("Use: usar 0 1", "combate");
+}
+
+function usarDados(cmd) {
+    let partes = cmd.split(" ").slice(1);
+    let dano = 0;
+    let defesa = 0;
+
+    partes.forEach(p => {
+        let i = parseInt(p);
+        if (resultados[i]) {
+            let d = resultados[i].d;
+            let v = resultados[i].val;
+
+            if (d.tipo === "atk") dano += v;
+            if (d.tipo === "crit") dano += v * 2;
+            if (d.tipo === "def") defesa += v;
+        }
+    });
+
+    enemy.hp -= dano;
+    print("Você causou " + dano);
+
+    if (enemy.hp <= 0) {
+        let ganho = rand(enemy.gold);
+        player.gold += ganho;
+        player.vitorias++;
+
+        print("Você venceu! Ganhou " + ganho + " ouro");
+        modo = "explorando";
+        return;
+    }
+
+    let atk = enemyIntent.valor;
+    let danoFinal = Math.max(0, atk - defesa);
+
+    player.hp -= danoFinal;
+
+    print("Inimigo causou " + atk);
+    print("Você bloqueou " + defesa);
+    print("Dano recebido: " + danoFinal);
+
+    if (player.hp <= 0) {
+        gameOver();
+    } else {
+        print("Digite: rolar");
+        definirIntento();
+    }
+}
+
+function definirIntento() {
+    let tipos = ["ataque", "ataque_forte"];
+    let tipo = tipos[Math.floor(Math.random() * tipos.length)];
+
+    let valor = rand(enemy.atk);
+    if (tipo === "ataque_forte") valor += 2;
+
+    enemyIntent = { tipo, valor };
+    mostrarIntento();
+}
+
+function mostrarIntento() {
+    if (enemyIntent.tipo === "ataque")
+        print("👁️ Inimigo vai atacar causando " + enemyIntent.valor, "combate");
+
+    if (enemyIntent.tipo === "ataque_forte")
+        print("💀 Inimigo prepara ataque FORTE (" + enemyIntent.valor + ")", "combate");
+}
+
+// EVENTOS (INTACTOS)
+function eventoAleatorio() {
+    modo = "evento";
+    let eventos = [() => velho(), () => bau(), () => altar()];
+    eventos[Math.floor(Math.random() * eventos.length)]();
+}
+
+function velho() {
+    eventoAtual = {
+        opcoes: {
+            "1": () => {
+                print("Você ganhou dado crítico!");
+                player.hp -= 5;
+                player.dados.push({nome: "Crítico", tipo: "crit", faces: 8});
+                modo = "explorando";
+            },
+            "2": () => {
+                print("Você recusou...");
+                modo = "explorando";
+            }
+        }
+    };
+
+    print("Velho misterioso:", "box evento");
+    print("1 - Aceitar poder (-5 HP, ganha dado)", "evento");
+    print("2 - Recusar", "evento");
+}
+
+function bau() {
+    eventoAtual = {
+        opcoes: {
+            "1": () => {
+                let ouro = rand([5,15]);
+                player.gold += ouro;
+                print("Você encontrou " + ouro + " ouro!");
+                modo = "explorando";
+            },
+            "2": () => {
+                print("Você ignorou o baú.");
+                modo = "explorando";
+            }
+        }
+    };
+
+    print("Você encontrou um baú:", "box evento");
+    print("1 - Abrir", "evento");
+    print("2 - Ignorar", "evento");
+}
+
+function altar() {
+    eventoAtual = {
+        opcoes: {
+            "1": () => {
+                player.hp -= 10;
+                player.gold += 20;
+                print("Sacrifício feito...");
+                modo = "explorando";
+            },
+            "2": () => {
+    print("Você decide continuar seguindo seu caminho em sua aventura...");
+    modo = "explorando";
+}
+        }
+    };
+
+    print("Um altar sombrio:", "box evento");
+    print("1 - Sacrificar 10 HP por 20 ouro", "evento");
+    print("2 - Sair", "evento");
+}
+
+function eventoDescanso() {
+    modo = "evento";
+
+    eventoAtual = {
+        opcoes: {
+            "1": () => {
+                player.hp += 10;
+                print("Você descansou (+10 HP)");
+                modo = "explorando";
+            },
+            "2": () => {
+    print("Você decide continuar seguindo seu caminho em sua aventura...");
+    modo = "explorando";
+}
+        }
+    };
+
+    print("Área segura:", "box evento");
+    print("1 - Descansar", "evento");
+    print("2 - Seguir", "evento");
+}
+
+function eventoLoja() {
+    modo = "evento";
+
+    eventoAtual = {
+        opcoes: {
+            "1": () => {
+                if (player.gold >= 15) {
+                    player.gold -= 15;
+                    player.hp += 10;
+                    print("Você comprou cura!");
+                } else print("Ouro insuficiente");
+                modo = "explorando";
+            },
+            "2": () => {
+                if (player.gold >= 20) {
+                    player.gold -= 20;
+                    player.dados.push({nome:"Ataque+", tipo:"atk", faces:8});
+                    print("Novo dado adquirido!");
+                } else print("Ouro insuficiente");
+                modo = "explorando";
+            },
+            "3": () => {
+    print("Você ignora a loja e segue seu caminho...");
+    modo = "explorando";
+}
+        }
+    };
+
+    print("Loja:", "box evento");
+    print("1 - Cura (15 ouro)", "evento");
+    print("2 - Dado melhor (20 ouro)", "evento");
+    print("3 - Sair", "evento");
+}
+
+// UTIL
+function rand(arr) {
+    return Math.floor(Math.random() * (arr[1] - arr[0] + 1)) + arr[0];
+}
+
+// INÍCIO
+menuInicial();
+atualizarHUD();
+
+function menuInicial() {
+    modo = "menu";
+    print("=== DARK PIXEL DUNGEON ===", "box evento");
+    print("Digite seu nome:", "evento");
+}
+</script>
+
+</body>
+</html>
