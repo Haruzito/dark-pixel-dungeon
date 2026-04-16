@@ -179,6 +179,27 @@ let salvarSlot = "1";
 let fase = 0;
 let rerolls = 0;
 let maxRerolls = 2;
+const FACES_DADO_BASE = {
+    atk: ["ataque", "ataque", "ataque", "nada", "critico", "nada"],
+    def: ["defesa", "defesa", "nada", "nada", "defesa", "nada"]
+};
+function iconeFace(face) {
+    if (face === "ataque") return "⚔";
+    if (face === "defesa") return "🛡";
+    if (face === "critico") return "☠";
+    return "---";
+}
+function calcularDanoPreview(face) {
+
+    let bonus = player.equipamentos.reduce((s, e) => s + e.dano, 0);
+    let base = 3 + bonus;
+
+    if (face === "ataque") return "+" + base;
+
+    if (face === "critico") return "x" + (base * 2);
+
+    return "";
+}
 
 // HUD
 function atualizarHUD() {
@@ -186,31 +207,38 @@ function atualizarHUD() {
     let eqTexto = player.equipamentos.map(e => e.nome + " (+" + e.dano + ")").join(", ");
 
     let dadosTexto = player.dados.map((d, i) => {
-        let info = `🎲 ${d.nome} (${d.tipo}) d${d.faces}`;
 
-        if (d.critChance) {
-            info += ` | Crit: ${d.critChance}% x${d.critMulti}`;
-        }
+        let faces = FACES_DADO_BASE[d.tipo];
 
-        if (d.bloqueioBonus) {
-            info += ` | Block +${d.bloqueioBonus}`;
-        }
+        let blocos = faces.map(f => {
 
-        return info;
-    }).join("\n");
+            let icone = iconeFace(f);
+            let preview = calcularDanoPreview(f);
+
+            if (preview) {
+                return `[ ${icone} ${preview} ]`;
+            }
+
+            return `[ ${icone || "---"} ]`;
+
+        }).join(" ");
+
+        return `🎲 ${d.nome} (${d.tipo}) d${d.faces}\n   ${blocos}`;
+
+    }).join("\n\n");
 
     document.getElementById("player").innerText =
-    "👤 " + (player.nome || "Sem Nome") +
-    "\n🏷️ Classe: " + player.classe +
-    "\n❤️ HP: " + player.hp +
-    "\n🔮 Mana: " + player.mana +
-    "💰 Ouro: " + player.gold +
-    "\n📍 Fase: " + fase +
-    "\n🎲 Rerolls: " + (maxRerolls - rerolls) + "/" + maxRerolls +
-    "\n⚔️ Equip: " + (eqTexto || "Nenhum") +
-    "\n\n" +
-    "📊 DADOS:\n" +
-    dadosTexto;
+        "👤 " + (player.nome || "Sem Nome") +
+        "\n🏷️ Classe: " + player.classe +
+        "\n❤️ HP: " + player.hp +
+        "\n🔮 Mana: " + player.mana +
+        "\n💰 Ouro: " + player.gold +
+        "\n📍 Fase: " + fase +
+        "\n🎲 Rerolls: " + (maxRerolls - rerolls) + "/" + maxRerolls +
+        "\n⚔️ Equip: " + (eqTexto || "Nenhum") +
+        "\n\n" +
+        "📊 DADOS:\n" +
+        dadosTexto;
 
     document.getElementById("inventory").innerText =
         "🎒 " + (player.inventario.length ? player.inventario.join(", ") : "Vazio");
@@ -394,12 +422,12 @@ else {
 function gerarInimigo() {
     let inimigos = [
         {nome: "Goblin", hp: 10, atk: [2,4], gold: [5,10]},
-        {nome: "Esqueleto", hp: 20, atk: [3,7], gold: [8,15]},
+        {nome: "Esqueleto", hp: 20, atk: [3,6], gold: [8,15]},
         {nome: "Slime Sombrio", hp: 10, atk: [2,6], gold: [4,7]},
         {nome: "Slime", hp: 6, atk: [2,6], gold: [2,4]},
-        {nome: "K'Lonthar", hp: 20, atk: [1,10], gold: [7,10]},
+        {nome: "K'Lonthar", hp: 20, atk: [4,6], gold: [7,10]},
         {nome: "Veldriniano saqueador", hp: 24, atk: [5,8], gold: [1,20]},
-        {nome: "Esqueleto Pirata", hp: 15, atk: [6,10], gold: [10,15]}
+        {nome: "Esqueleto Pirata", hp: 15, atk: [6,6], gold: [10,15]}
     ];
     return inimigos[Math.floor(Math.random() * inimigos.length)];
 }
@@ -420,13 +448,11 @@ function iniciarCombate() {
 
 function rolarDados() {
 
-    // 🚫 bloqueio de reroll
     if (resultados.length > 0 && rerolls >= maxRerolls) {
         print("❌ Você não pode mais rerolar!", "evento");
         return;
     }
 
-    // 🔁 se já rolou antes, conta como reroll
     if (resultados.length > 0) {
         rerolls++;
         print("🔁 Reroll usado (" + rerolls + "/" + maxRerolls + ")", "evento");
@@ -435,35 +461,58 @@ function rolarDados() {
     resultados = [];
 
     player.dados.forEach((d, i) => {
-        let val = Math.floor(Math.random() * d.faces) + 1;
-        resultados.push({d, val});
-        print("[" + i + "] " + d.nome + " → " + val, "combate");
+
+        let facesBase = FACES_DADO_BASE[d.tipo];
+
+        let face = facesBase[Math.floor(Math.random() * 6)];
+
+        resultados.push({
+            d: d,
+            face: face
+        });
+
+        print("[" + i + "] " + d.nome + " → " + face, "combate");
     });
 
     print("Use: usar 0 1", "combate");
 }
 
 function usarDados(cmd) {
+
     let partes = cmd.split(" ").slice(1);
+
     let dano = 0;
     let defesa = 0;
 
     partes.forEach(p => {
-        let i = parseInt(p);
-        if (resultados[i]) {
-            let d = resultados[i].d;
-            let v = resultados[i].val;
 
-            if (d.tipo === "atk") {
-    let bonus = player.equipamentos.reduce((soma, eq) => soma + eq.dano, 0);
-    dano += v + bonus;
-}
-            if (d.tipo === "crit") dano += v * 2;
-            if (d.tipo === "def") defesa += v;
+        let i = parseInt(p);
+
+        if (resultados[i]) {
+
+            let face = resultados[i].face;
+
+            // ⚔️ ATAQUE
+            if (face === "ataque") {
+                let bonus = player.equipamentos.reduce((s, e) => s + e.dano, 0);
+                dano += 3 + bonus;
+            }
+
+            // 💀 CRÍTICO
+            if (face === "critico") {
+                let bonus = player.equipamentos.reduce((s, e) => s + e.dano, 0);
+                dano += (3 + bonus) * 2;
+            }
+
+            // 🛡️ DEFESA
+            if (face === "defesa") {
+                defesa += 3;
+            }
         }
     });
 
     enemy.hp -= dano;
+
     print("Você causou " + dano);
 
     if (enemy.hp <= 0) {
@@ -486,15 +535,15 @@ function usarDados(cmd) {
     print("Dano recebido: " + danoFinal);
 
     if (player.hp <= 0) {
-    gameOver();
-} else {
+        gameOver();
+        return;
+    }
 
-    rerolls = 0;        // 👈 RESET AQUI
-    resultados = [];    // 👈 LIMPA DADOS ANTIGOS (IMPORTANTE)
+    rerolls = 0;
+    resultados = [];
 
     print("Digite: rolar");
     definirIntento();
-}
 }
 
 function definirIntento() {
