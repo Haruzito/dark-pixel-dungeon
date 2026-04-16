@@ -49,6 +49,13 @@ input {
     outline: none;
 }
 
+/* INPUT FIXO (tipo chat) */
+input {
+    position: sticky;
+    bottom: 0;
+    font-size: 16px;
+}
+
 #player, #enemy, #inventory {
     margin-bottom: 15px;
     padding: 10px;
@@ -73,6 +80,37 @@ input {
 
 .linha {
     margin: 5px 0;
+}
+
+/* 📱 MODO MOBILE */
+@media (max-width: 768px) {
+
+    #layout {
+        flex-direction: column;
+        height: auto;
+    }
+
+    #left, #right, #center {
+        width: 100%;
+        border: none;
+    }
+
+    #left {
+        order: 1;
+    }
+
+    #center {
+        order: 2;
+    }
+
+    #right {
+        order: 3;
+    }
+
+    #terminal {
+        height: 50vh;
+    }
+
 }
 </style>
 </head>
@@ -134,6 +172,8 @@ let resultados = [];
 let eventoAtual = null;
 let inicioJogo = Date.now();
 let salvarSlot = "1";
+let rerolls = 0;
+let maxRerolls = 2;
 
 // HUD
 function atualizarHUD() {
@@ -155,10 +195,11 @@ function atualizarHUD() {
         "👤 " + player.classe +
         "\n❤️ HP: " + player.hp +
         "\n🔮 Mana: " + player.mana +
-        "\n💰 Ouro: " + player.gold +
-        "\n\n" +
-        "📊 DADOS:\n" +
-        dadosTexto;
+        "💰 Ouro: " + player.gold +
+"\n🎲 Rerolls: " + (maxRerolls - rerolls) + "/" + maxRerolls +
+"\n\n" +
+"📊 DADOS:\n" +
+dadosTexto;
 
     document.getElementById("inventory").innerText =
         "🎒 " + (player.inventario.length ? player.inventario.join(", ") : "Vazio");
@@ -291,11 +332,26 @@ function iniciarCombate() {
     enemy = gerarInimigo();
     definirIntento();
 
+    rerolls = 0;
+
     print("⚔️ Você encontrou: " + enemy.nome, "box combate");
     print("Digite: rolar", "combate");
 }
 
 function rolarDados() {
+
+    // 🚫 bloqueio de reroll
+    if (resultados.length > 0 && rerolls >= maxRerolls) {
+        print("❌ Você não pode mais rerolar!", "evento");
+        return;
+    }
+
+    // 🔁 se já rolou antes, conta como reroll
+    if (resultados.length > 0) {
+        rerolls++;
+        print("🔁 Reroll usado (" + rerolls + "/" + maxRerolls + ")", "evento");
+    }
+
     resultados = [];
 
     player.dados.forEach((d, i) => {
@@ -347,11 +403,15 @@ function usarDados(cmd) {
     print("Dano recebido: " + danoFinal);
 
     if (player.hp <= 0) {
-        gameOver();
-    } else {
-        print("Digite: rolar");
-        definirIntento();
-    }
+    gameOver();
+} else {
+
+    rerolls = 0;        // 👈 RESET AQUI
+    resultados = [];    // 👈 LIMPA DADOS ANTIGOS (IMPORTANTE)
+
+    print("Digite: rolar");
+    definirIntento();
+}
 }
 
 function definirIntento() {
